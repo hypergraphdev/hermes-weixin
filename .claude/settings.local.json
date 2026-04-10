@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -p 2222 git@60.205.166.22 \"ls -d /home/git/wuxing/openclaw-hire.git 2>/dev/null || find / -name ''openclaw-hire.git'' -type d 2>/dev/null | head -5\")",
+      "Bash(ssh -p 2222 git@60.205.166.22 \"find / -name ''openclaw-hire.git'' -type d 2>/dev/null | head -5\")",
+      "Bash(ssh -p 2222 git@60.205.166.22 \"pwd\")",
+      "Bash(curl -sk https://60.205.166.22:2222/)",
+      "Bash(curl -sk http://60.205.166.22:3000/)",
+      "Bash(curl -sk http://60.205.166.22/)",
+      "Bash(curl -s http://60.205.166.22:3000/api/v1/version)",
+      "Bash(curl -s -X POST \"http://60.205.166.22:3000/api/v1/user/repos\" -H \"Authorization: token 677c01dd9b6ee745dbe6edd3c5eba147cc89cf01\" -H \"Content-Type: application/json\" -d '{\"\"name\"\":\"\"zylos-weixin\"\",\"\"description\"\":\"\"zylos-weixin project\"\",\"\"private\"\":true}')",
+      "Bash(git remote:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
+    ]
+  }
+}

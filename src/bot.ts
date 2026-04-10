@@ -80,10 +80,10 @@ function buildEndpoint(accountId: string, target: string): string {
 }
 
 /**
- * Send an inbound WeChat message to Hermes Gateway via HTTP webhook.
- * Hermes Gateway receives this and routes it to the AI agent.
+ * Send an inbound WeChat message to Hermes Agent via `hermes chat -q`.
+ * Captures the reply and sends it back to the WeChat user.
  */
-async function sendToHermes(endpoint: string, content: string): Promise<void> {
+async function sendToHermesAndReply(endpoint: string, content: string, accountId: string): Promise<void> {
   if (!content) return;
   if (_activeDispatches >= MAX_CONCURRENT_DISPATCHES) {
     console.warn(`${LOG_PREFIX} Dispatch concurrency cap reached (${MAX_CONCURRENT_DISPATCHES}), dropping`);
@@ -91,22 +91,76 @@ async function sendToHermes(endpoint: string, content: string): Promise<void> {
   }
   _activeDispatches++;
 
-  try {
-    const body = JSON.stringify({ from: endpoint, content, channel: CHANNEL });
-    const url = new URL("/api/webhook/weixin", HERMES_GATEWAY_URL);
+  // Extract plain text (remove XML formatting from formatInboundMessage)
+  const plainText = content.replace(/\[Weixin DM\] .+ said: /, "").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
 
-    const resp = await fetch(url.toString(), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body,
-      signal: AbortSignal.timeout(15_000),
+  try {
+    console.log(`${LOG_PREFIX} -> Hermes: ${plainText.substring(0, 80)}...`);
+
+    // Call hermes chat -q to get a reply
+    const { execFile: execFileAsync } = await import("node:child_process");
+    const reply = await new Promise<string>((resolve, reject) => {
+      execFileAsync("hermes", ["chat", "-q", plainText], {
+        encoding: "utf8",
+        timeout: 120_000,
+        env: { ...process.env, NO_COLOR: "1", TERM: "dumb" },
+      }, (error, stdout, stderr) => {
+        if (error && !stdout) {
+          reject(new Error(`hermes chat failed: ${error.message}`));
+          return;
+        }
+        // Extract reply from output — it's between "⚕ Hermes" markers
+        const lines = (stdout || "").split("\n");
+        const replyLines: string[] = [];
+        let inReply = false;
+        for (const line of lines) {
+          // Start of reply block
+          if (line.includes("Hermes") && line.includes("───")) {
+            inReply = true;
+            continue;
+          }
+          // End of reply block
+          if (inReply && (line.includes("───") || line.includes("Resume this session"))) {
+            break;
+          }
+          if (inReply) {
+            const clean = line.replace(/^│\s?/, "").replace(/\s*│$/, "").trim();
+            if (clean) replyLines.push(clean);
+          }
+        }
+        // Fallback: if parsing failed, try to get any meaningful text
+        if (replyLines.length === 0) {
+          for (const line of lines) {
+            const clean = line.trim();
+            if (clean && !clean.startsWith("╭") && !clean.startsWith("╰") && !clean.startsWith("│") &&
+                !clean.startsWith("Session:") && !clean.startsWith("Duration:") && !clean.startsWith("Messages:") &&
+                !clean.startsWith("Resume") && !clean.startsWith("Query:") && !clean.startsWith("Initializing") &&
+                !clean.includes("───") && !clean.includes("⚕") && clean.length > 5) {
+              replyLines.push(clean);
+            }
+          }
+        }
+        resolve(replyLines.join("\n").trim());
+      });
     });
 
-    if (resp.ok) {
-      console.log(`${LOG_PREFIX} -> Hermes: ${content.substring(0, 80)}...`);
+    if (reply) {
+      console.log(`${LOG_PREFIX} <- Hermes: ${reply.substring(0, 80)}...`);
+      // Send reply back to WeChat
+      const target = endpoint.includes("|") ? endpoint.split("|").pop()! : endpoint;
+      const account = resolveAccount(accountId);
+      if (account.configured) {
+        const contextToken = getContextToken(accountId, target);
+        const { markdownToPlainText } = await import("./messaging/send.js");
+        await sendMessageWeixin({
+          to: target,
+          text: markdownToPlainText(reply),
+          opts: { baseUrl: account.baseUrl, token: account.token, contextToken },
+        });
+        console.log(`${LOG_PREFIX} Reply sent to WeChat: ${target}`);
+      }
     } else {
-      const text = await resp.text().catch(() => "");
-      console.error(`${LOG_PREFIX} Hermes returned ${resp.status}: ${text.substring(0, 200)}`);
+      console.warn(`${LOG_PREFIX} Hermes returned empty reply`);
     }
   } catch (err) {
     console.error(`${LOG_PREFIX} Hermes dispatch error: ${String(err)}`);
@@ -433,7 +487,7 @@ async function monitorAccount(
 
         // Format and dispatch to Hermes
         const formatted = formatInboundMessage(full, accountId, mediaResult);
-        sendToHermes(buildEndpoint(accountId, fromUserId), formatted);
+        sendToHermesAndReply(buildEndpoint(accountId, fromUserId), formatted, accountId);
       }
     } catch (err) {
       if (abortSignal.aborted) {
