@@ -1,0 +1,1 @@
+{"version":3,"file":"cdn-url.d.ts","sourceRoot":"","sources":["../../src/cdn/cdn-url.ts"],"names":[],"mappings":"AAAA,eAAO,MAAM,uBAAuB,OAAO,CAAC;AAE5C,wBAAgB,mBAAmB,CAAC,mBAAmB,EAAE,MAAM,EAAE,UAAU,EAAE,MAAM,GAAG,MAAM,CAE3F;AAED,wBAAgB,iBAAiB,CAAC,MAAM,EAAE;IACxC,UAAU,EAAE,MAAM,CAAC;IACnB,WAAW,EAAE,MAAM,CAAC;IACpB,OAAO,EAAE,MAAM,CAAC;CACjB,GAAG,MAAM,CAET"}
